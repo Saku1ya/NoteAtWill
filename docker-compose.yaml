@@ -1,0 +1,86 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: notesatwill-mysql
+    restart: unless-stopped
+    environment:
+      # 格式必须是 ${VAR:-默认值}，那个 "-" 不能省！
+      # 写成 ${VAR:} 会让 compose 直接报 invalid interpolation format 并拒绝解析所有命令。
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: notes_at_will
+      TZ: Asia/Shanghai
+      # ★ 关键：影响容器内 mysql 客户端的字符集。
+      # 初始化脚本（docker-entrypoint-initdb.d）是由容器内的 mysql 客户端执行的，
+      # 如果客户端字符集不是 utf8mb4，脚本里的中文会被当成 latin1 再编码一次，
+      # 导致数据落库后变成乱码（"饮食" 变 "é¥®å..."）。
+      # 只配 --character-set-server 不够，客户端侧也要指定。
+      LANG: C.UTF-8
+    ports:
+      - "127.0.0.1:3307:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      # ★★ 千万不要加 --character-set-client-handshake / --skip-character-set-client-handshake！
+      #   MySQL 8.0.14 起该选项废弃，8.4 已【彻底移除】，写了会报
+      #   "unknown variable 'character-set-client-handshake=FALSE'" 然后 mysqld 直接 Aborting，
+      #   容器陷入重启循环。而且 8.4 本来就不再做客户端字符集协商，默认就是 utf8mb4，
+      #   加不加都没意义 —— 中文乱码的根因不在这里（见下方 sql 挂载处说明）。
+      - --default-time-zone=+08:00
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # sql/ 目录下的脚本会在【数据卷首次初始化】时按文件名顺序自动执行，
+      # 所以文件用了 01_ / 02_ 前缀。数据卷已存在时不会重复执行；
+      # 想重新跑初始化脚本，要先 docker compose down -v 清掉数据卷。
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  redis:
+    image: redis:8-alpine
+    container_name: notesatwill-redis
+    restart: unless-stopped
+    environment:
+      # 仅用于下方 command 与 healthcheck 引用，方便改密码时只改一处
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    ports:
+      - "127.0.0.1:6379:6379"
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:-change-me}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mysql-data:
+  redis-data:
+
+# ============================================================================
+# 说明（不要把带 $ 花括号的占位符写进注释，Docker Compose 会解析注释里的插值并报错）
+# ----------------------------------------------------------------------------
+# 密码等敏感值统一放在项目根目录的 .env 文件里（该文件通常不入库）。
+# 变量名必须与上方 services 中的引用【逐字一致】：
+#   MYSQL_ROOT_PASSWORD / REDIS_PASSWORD
+# 曾出现过 .env 写成 REDIS_ROOT_PASSWORD 而 compose 引用 REDIS_PASSWORD 的情况，
+# 虽侥幸生效，但属于不可依赖的行为，已修正。
+#
+# Spring Boot 侧的连接配置不在这里写，见 src/main/resources/application-dev.yaml。
+# 要点：MySQL 宿主端口是 3307；JDBC URL 必须带 allowPublicKeyRetrieval=true。
+#
+# 验证服务是否起来：
+#   docker compose ps                        # STATUS 应为 healthy
+#   docker exec -it notesatwill-mysql mysql -uroot -p -e "USE notes_at_will; SHOW TABLES;"
+#   docker exec -it notesatwill-redis redis-cli -a 密码 ping    # 期望输出 PONG
+# ============================================================================

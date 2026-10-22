@@ -1,0 +1,169 @@
+# ============================================================================
+# NotesAtWill 主配置
+# ----------------------------------------------------------------------------
+# 约定：
+#   1. 敏感信息（数据库密码、Redis 密码）一律用 ${ENV:默认值} 占位，不写明文。
+#      实际值放在项目根目录 .env（供 Docker Compose 用）或系统环境变量里。
+#   2. 环境相关配置放 application-dev.yaml / application-prod.yaml，
+#      由 spring.profiles.active 切换。这里只放与环境无关的通用配置。
+#   3. 生产环境用环境变量覆盖，例如 SPRING_DATASOURCE_PASSWORD。
+# ============================================================================
+
+spring:
+  application:
+    name: NotesAtWill
+
+  # 默认激活 dev 环境；打包部署时用 --spring.profiles.active=prod 覆盖
+  profiles:
+    active: dev
+
+  # ---------------------------------------------------------------------------
+  # Jackson 3（Spring Boot 4 默认）
+  # ---------------------------------------------------------------------------
+  # 注意：Jackson 3 只把 core / databind 迁到了 tools.jackson.*，
+  #       【注解仍在 com.fasterxml.jackson.annotation.*】，代码里不要引错。
+  jackson:
+    # ------------------------------------------------------------------------
+    # 注意：date-format 只对 java.util.Date 生效，【对 LocalDateTime 无效】！
+    # 本项目实体全部用 LocalDateTime / LocalDate，所以真正控制时间格式的是
+    # JacksonConfig 里的 JsonMapperBuilderCustomizer（JavaTimeModule 配置）。
+    # 这里保留这一行只是为了让 java.util.Date（如果将来用到）也有统一格式。
+    # ------------------------------------------------------------------------
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+    serialization:
+      # ★ 千万不要在这里配置"日期是否输出为时间戳"！
+      # Jackson 3 已把该项从 SerializationFeature 迁到 DateTimeFeature，
+      # 而 Spring Boot 4 没有暴露对应的配置前缀 —— 写了会直接启动报错，
+      # 报错信息形如「无法解析枚举常量」。
+      # 好在 Jackson 3 默认就不写时间戳（日期默认输出 ISO-8601 字符串），
+      # 所以这项根本不需要配。时间格式统一由 JacksonConfig 控制。
+      fail-on-empty-beans: false
+    deserialization:
+      # 遇到未知字段不报错，避免前端多传一个字段就 400。
+      # 对 AI 返回的 JSON 尤其重要——模型偶尔会多吐字段。
+      fail-on-unknown-properties: false
+
+  # ---------------------------------------------------------------------------
+  # 文件上传限制（二期账单导入可能用到，先给个合理值）
+  # ---------------------------------------------------------------------------
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # ---------------------------------------------------------------------------
+  # 虚拟线程：Java 21 + Boot 4 可直接开启，提升 IO 密集型接口吞吐
+  # ---------------------------------------------------------------------------
+  threads:
+    virtual:
+      enabled: true
+  web:
+    error:
+      include-message: never
+      include-stacktrace: never
+      whitelabel:
+        enabled: false
+
+# ============================================================================
+# 服务端口
+# ============================================================================
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  # SSE 长连接场景下，避免 Tomcat 过早断开空闲连接
+  tomcat:
+    connection-timeout: 60s
+  # 关闭默认错误页面的堆栈暴露（全局异常处理器会接管）
+
+# ============================================================================
+# MyBatis-Plus
+# ============================================================================
+mybatis-plus:
+  # Mapper XML 位置（如果后续用 XML 写复杂 SQL）
+  mapper-locations: classpath*:/mapper/**/*.xml
+  # 实体类别名包，XML 里可直接用类名不用写全限定名
+  type-aliases-package: com.sakuya.notesatwill.entity
+  configuration:
+    # 下划线转驼峰：create_time -> createTime
+    map-underscore-to-camel-case: true
+    # 关闭一级缓存，避免同一 SqlSession 内拿到脏数据（配合逻辑删除更安全）
+    local-cache-scope: statement
+    # 开发期打印 SQL，生产环境由 dev/prod profile 覆盖为 NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      # 主键策略：数据库自增（与建表脚本的 AUTO_INCREMENT 一致）
+      id-type: auto
+      # 逻辑删除字段名与取值
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      # 更新时忽略 null 字段（避免把没传的字段覆盖成 null）
+      update-strategy: not_null
+      insert-strategy: not_null
+
+# ============================================================================
+# 业务自定义配置
+# ============================================================================
+notes-at-will:
+  # JWT 相关
+  jwt:
+    # 签名密钥：生产环境【必须】用环境变量覆盖，默认值仅供本地开发。
+    # ★ 长度必须 ≥ 32 字节 —— 这是 HS256 的规范要求（RFC 7518 §3.2：HMAC 密钥不得短于哈希输出长度），
+    #   不是可调项，也不建议为了好记而缩短。JwtUtil.init() 会在启动时校验字节数，
+    #   过短直接抛 IllegalStateException 导致应用启动失败（fail-fast，避免推迟到线上首次登录才暴露）。
+    # 当前值 42 字节 → JJWT 自动选择 HS256。
+    secret: ${JWT_SECRET:Izayoi16Sakuya-NotesAtWill-Dev-Secret-2026}
+    # 有效期（秒）：7 天
+    expire-seconds: 604800
+    # token 在请求头中的字段名
+    header: Authorization
+    # token 前缀
+    prefix: "Bearer "
+
+  # AI 服务（Python FastAPI）
+  ai:
+    # FastAPI 服务地址
+    base-url: ${AI_SERVICE_URL:http://127.0.0.1:8000}
+    # 按接口区分的超时（毫秒），禁止用统一默认值：
+    #   /parse-bill 解析要调大模型，给足时间
+    #   /greeting   要保首屏不白屏，必须短
+    timeouts:
+      parse-bill: 15000
+      greeting: 3000
+      chat: 30000
+      #   /analyze    生成消费点评（100~200 字），比解析慢但不该太久
+      analyze: 15000
+
+  # 每日问候
+  greeting:
+    # 时段划分的边界（小时），用于把一天切成 DAWN/MORNING/...
+    # 具体划分逻辑在 Service 层，这里只放可调参数
+    enabled: true
+
+# ============================================================================
+# Actuator：只暴露必要端点
+# ============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        # 生产环境建议只留 health
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ============================================================================
+# 日志
+# ============================================================================
+logging:
+  level:
+    root: INFO
+    com.sakuya.notesatwill: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

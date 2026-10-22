@@ -1,0 +1,41 @@
+/* 全局基础样式。
+ *
+ * ★ Vite 默认的 style.css 会给 #app 套一大堆演示样式（居中、内边距、
+ *   body 的 flex 居中），那些会让联调页排版错乱。这里全部换掉，
+ *   只保留最小的重置。
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f5f6f8;
+  color: #1f2328;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}

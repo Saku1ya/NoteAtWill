@@ -1,0 +1,65 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.workbuddy
+### 敏感信息：绝对不能提交 ###
+# .env 里放着 MySQL / Redis 的真实密码（供 docker compose 读取），提交即泄密。
+# ★ 只写 `.env` 这个精确文件名，不用更宽松的通配，避免误伤同名目录。
+.env
+# 本地环境覆盖配置（如 .env.production）同样不入库
+.env.*
+# 模板文件要提交：里面只有占位值，供他人复制成自己的 .env。
+# ★ 取反规则必须写在忽略规则【之后】，顺序颠倒就会被前面的规则盖掉。
+!.env.example
+
+# 其它可能存放密钥的本地配置（本项目 Key 约定走环境变量，列在这里是双保险）
+*.local
+
+### 不随代码发布的内容 ###
+# AI 助手的工作记录（决策过程、变更史），属于本地过程性材料，不是项目产出。
+.workbuddy/
+# 设计文档与界面截图：文档含内部取舍推理，截图可能带真实账目与账号，
+# 待逐张确认脱敏后再决定是否单独公开。
+docs/
+# 本地安装的 AI 技能（第三方工具目录），与本项目无关。
+.agents/
+
+### 日志 ###
+*.log
+logs/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Python（ai-service）###
+ai-service/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

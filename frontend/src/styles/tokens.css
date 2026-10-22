@@ -1,0 +1,463 @@
+/* ============================================================================
+ * 设计令牌：纸 · 墨 · 印
+ *
+ * ★ 这套语言的三个来源（不是随便挑的颜色）：
+ *   纸 —— 账本的底，比纯白暖一点点，长时间看不刺眼
+ *   墨 —— 账本的字，不用纯黑（#000），用带一点褐的 #1C1917，像印刷的墨
+ *   印 —— 印章的朱红，全站只有两个用途：标记"当前要处理的东西"，以及错误/超支
+ *
+ * ★★ 最重要的约束：**圆角几乎为零**。账页没有圆角。
+ *   输入框、色块最多 2px，只有按钮允许 3px。
+ *   一旦出现 8px 以上的圆角，整页立刻变成"卡片后台"，语言就崩了。
+ *
+ * ★ 层级靠线宽，不靠阴影：
+ *   1px   常规分栏
+ *   1.5px 区块收口（合计线下、表格表头下）
+ *   2px   强调（当前选中、引文左边）
+ *   全站不用 box-shadow 做层级。
+ * ========================================================================== */
+
+:root {
+  /* ---------- 纸 ---------- */
+  --naw-paper: #fbf9f4;
+  --naw-paper-2: #f5f1e6;
+  --naw-paper-3: #efe9da;
+
+  /* ---------- 墨 ---------- */
+  --naw-ink: #1c1917;
+  --naw-ink-2: #4a443d;
+  --naw-ink-3: #6e675d;
+  --naw-ink-4: #9a948a;
+
+  /* ---------- 印 ---------- */
+  --naw-seal: #b33a2b;
+  --naw-seal-soft: rgba(179, 58, 43, 0.1);
+  --naw-seal-line: rgba(179, 58, 43, 0.42);
+
+  /* ---------- 收入：唯一的绿 ---------- */
+  --naw-income: #2f6b4f;
+
+  /* ---------- 线 ---------- */
+  --naw-rule: rgba(28, 25, 23, 0.13);
+  --naw-rule-2: rgba(28, 25, 23, 0.28);
+  --naw-rule-3: rgba(28, 25, 23, 0.5);
+
+  /* ---------- 字 ---------- */
+  --naw-serif: 'Songti SC', 'STSong', 'SimSun', Georgia, serif;
+  --naw-sans: system-ui, -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --naw-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Courier New', monospace;
+
+  --naw-fs-xs: 10.5px;
+  --naw-fs-sm: 11.5px;
+  --naw-fs-base: 12.5px;
+  --naw-fs-md: 13.5px;
+  --naw-fs-lg: 15px;
+  --naw-fs-xl: 18px;
+  --naw-fs-2xl: 25px;
+  --naw-fs-3xl: 31px;
+
+  /* ---------- 间距 ---------- */
+  --naw-s1: 4px;
+  --naw-s2: 8px;
+  --naw-s3: 12px;
+  --naw-s4: 16px;
+  --naw-s5: 20px;
+  --naw-s6: 24px;
+  --naw-s8: 32px;
+  --naw-s10: 40px;
+  --naw-s12: 48px;
+
+  /* ---------- 布局（纯桌面） ---------- */
+  --naw-sidebar-w: 208px;
+  --naw-topbar-h: 54px;
+  --naw-page-x: 40px;
+}
+
+/* ============================================================================
+ * 重置
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--naw-paper);
+  color: var(--naw-ink);
+  font-family: var(--naw-sans);
+  font-size: var(--naw-fs-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+}
+
+#app {
+  height: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ============================================================================
+ * 滚动条
+ *
+ * ★★ 踩过的坑：滚动条是**盖在内容上面**的（overlay），不是占位挤开内容。
+ *   之前只设了 8px 宽、没给容器留边距，于是滚动条正好压在文字的右边缘上，
+ *   列表里靠右的金额、按钮都被截掉半个字（用户截图反馈过）。
+ *
+ *   两条解法叠加用：
+ *   1. `scrollbar-gutter: stable` —— 让滚动容器**永远**预留滚动条的位置，
+ *      即使当前不需要滚动也不变宽变窄（避免内容左右跳动）。
+ *   2. 滚动手柄本身画细、并留出透明边距，视觉上更轻。
+ * ========================================================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  /* 用 border + background-clip 把 8px 的槽细成 4px 的"手柄"，
+     两侧各让 2px 透明，滚动条就不会贴着文字 */
+  background: rgba(28, 25, 23, 0.2);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 25, 23, 0.34);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Firefox 走标准属性 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(28, 25, 23, 0.2) transparent;
+}
+
+/* ★ 所有自建的滚动容器统一预留滚动条槽位，杜绝"滚动条压字" */
+.naw-scroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* ============================================================================
+ * 通用工具类
+ * ========================================================================== */
+
+.naw-label {
+  font-size: var(--naw-fs-xs);
+  letter-spacing: 0.16em;
+  color: var(--naw-ink-3);
+  display: flex;
+  align-items: baseline;
+  gap: var(--naw-s2);
+}
+
+.naw-label__sub {
+  font-size: var(--naw-fs-xs);
+  letter-spacing: 0.02em;
+  opacity: 0.88;
+}
+
+.naw-num {
+  font-family: var(--naw-serif);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.naw-num--income {
+  color: var(--naw-income);
+}
+
+.naw-num--seal {
+  color: var(--naw-seal);
+}
+
+.naw-mono {
+  font-family: var(--naw-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.naw-muted {
+  color: var(--naw-ink-3);
+}
+
+.naw-textbtn {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--naw-ink-3);
+  font-size: var(--naw-fs-base);
+  color: var(--naw-ink-2);
+  cursor: pointer;
+  transition:
+    border-color 0.14s,
+    color 0.14s;
+}
+
+.naw-textbtn:hover {
+  color: var(--naw-ink);
+  border-bottom-color: var(--naw-ink);
+}
+
+.naw-textbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.naw-textbtn--seal {
+  color: var(--naw-seal);
+  border-bottom-color: var(--naw-seal);
+}
+
+.naw-btn {
+  background: var(--naw-ink);
+  color: var(--naw-paper);
+  border: none;
+  border-radius: 3px;
+  padding: 8px 18px;
+  font-size: var(--naw-fs-base);
+  cursor: pointer;
+  transition: opacity 0.14s;
+}
+
+.naw-btn:hover {
+  opacity: 0.86;
+}
+
+.naw-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.naw-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--naw-rule);
+  border-radius: 2px;
+  background: transparent;
+  font-size: var(--naw-fs-base);
+  color: var(--naw-ink);
+  outline: none;
+  transition: border-color 0.14s;
+}
+
+.naw-input:focus {
+  border-color: var(--naw-ink-2);
+}
+
+.naw-input::placeholder {
+  color: var(--naw-ink-4);
+}
+
+.naw-input--error {
+  border-color: var(--naw-seal);
+  color: var(--naw-seal);
+}
+
+.naw-empty {
+  padding: var(--naw-s8) 0;
+  font-size: var(--naw-fs-base);
+  color: var(--naw-ink-3);
+  text-align: center;
+}
+
+.naw-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.naw-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--naw-ink-3);
+  animation: naw-dot 1.1s ease-in-out infinite;
+}
+
+.naw-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.naw-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes naw-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ============================================================================
+ * Element Plus 覆写
+ * ★ 只改基调变量，不动组件结构
+ * ★ 圆角必须压到 2–3px，否则和"账页"语言冲突
+ * ========================================================================== */
+
+:root {
+  --el-color-primary: var(--naw-ink);
+  --el-color-primary-light-3: var(--naw-ink-2);
+  --el-color-primary-light-5: var(--naw-ink-3);
+  --el-color-primary-light-7: var(--naw-rule-2);
+  --el-color-primary-light-8: var(--naw-rule);
+  --el-color-primary-light-9: var(--naw-paper-2);
+  --el-color-primary-dark-2: #000;
+
+  --el-color-success: var(--naw-income);
+  --el-color-warning: var(--naw-seal);
+  --el-color-danger: var(--naw-seal);
+
+  --el-text-color-primary: var(--naw-ink);
+  --el-text-color-regular: var(--naw-ink-2);
+  --el-text-color-secondary: var(--naw-ink-3);
+  --el-text-color-placeholder: var(--naw-ink-4);
+
+  --el-border-color: var(--naw-rule);
+  --el-border-color-light: var(--naw-rule);
+  --el-border-color-lighter: var(--naw-rule);
+  --el-fill-color-blank: var(--naw-paper);
+  --el-fill-color-light: var(--naw-paper-2);
+  --el-bg-color: var(--naw-paper);
+
+  --el-border-radius-base: 2px;
+  --el-border-radius-small: 2px;
+  --el-font-size-base: var(--naw-fs-base);
+
+  --el-box-shadow-light: none;
+  --el-box-shadow: none;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--naw-rule) inset !important;
+  background: transparent !important;
+  border-radius: 2px !important;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--naw-rule-2) inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--naw-ink-2) inset !important;
+}
+
+.el-popper,
+.el-select-dropdown,
+.el-picker-panel,
+.el-dropdown__popper {
+  background: var(--naw-paper) !important;
+  border: 1px solid var(--naw-rule-2) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+
+.el-select-dropdown__item.is-selected {
+  color: var(--naw-ink) !important;
+  background: var(--naw-paper-2) !important;
+}
+
+.el-date-table td.current:not(.disabled) .el-date-table-cell__text {
+  background: var(--naw-ink) !important;
+  color: var(--naw-paper) !important;
+  border-radius: 2px !important;
+}
+
+.el-date-table td.today .el-date-table-cell__text {
+  color: var(--naw-seal) !important;
+}
+
+.el-pager li {
+  border-radius: 2px !important;
+  font-family: var(--naw-serif) !important;
+}
+
+.el-pager li.is-active {
+  background: var(--naw-ink) !important;
+  color: var(--naw-paper) !important;
+}
+
+.el-message {
+  background: var(--naw-paper) !important;
+  border: 1px solid var(--naw-rule-2) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  min-width: 240px;
+}
+
+.el-message__content {
+  color: var(--naw-ink) !important;
+  font-size: var(--naw-fs-base) !important;
+}
+
+.el-message-box {
+  background: var(--naw-paper) !important;
+  border: 1px solid var(--naw-rule-2) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+
+.el-message-box__title {
+  font-size: var(--naw-fs-lg) !important;
+  color: var(--naw-ink) !important;
+}
+
+.el-table {
+  --el-table-border-color: var(--naw-rule);
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  background: transparent !important;
+}
+
+.el-table th.el-table__cell {
+  background: transparent !important;
+}
+
+.el-switch.is-checked .el-switch__core {
+  background: var(--naw-ink) !important;
+  border-color: var(--naw-ink) !important;
+}

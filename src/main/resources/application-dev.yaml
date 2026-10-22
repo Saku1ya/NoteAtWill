@@ -1,0 +1,61 @@
+# ============================================================================
+# 开发环境配置
+# ----------------------------------------------------------------------------
+# 依赖项目根目录 docker compose 启动的两个容器：
+#   notesatwill-mysql   127.0.0.1:3307  → 容器内 3306
+#   notesatwill-redis   127.0.0.1:6379
+#
+# ★ 注意 MySQL 用的是 3307，不是 3306（刻意避开本机可能已占用的 3306）。
+# ============================================================================
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # ------------------------------------------------------------------------
+    # allowPublicKeyRetrieval=true 必须加！
+    # MySQL 8.0+ 默认认证插件是 caching_sha2_password，非 SSL 连接首次握手时
+    # 客户端需要向服务端索取 RSA 公钥，不加这个参数会报：
+    #   "Public Key Retrieval is not allowed"
+    # ------------------------------------------------------------------------
+    url: jdbc:mysql://127.0.0.1:3307/notes_at_will?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true&allowMultiQueries=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_ROOT_PASSWORD:123456}
+    hikari:
+      # 连接池名，排查慢查询时能在日志里认出是哪个池
+      pool-name: NotesAtWillHikariPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      # 连接超时：拿不到连接最多等 30 秒
+      connection-timeout: 30000
+      # 空闲连接存活时间
+      idle-timeout: 600000
+      # 连接最大存活时间，必须小于 MySQL 的 wait_timeout（默认 8 小时）
+      max-lifetime: 1800000
+      # 连接有效性检测
+      connection-test-query: SELECT 1
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ${REDIS_PASSWORD:redis123456}
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3000ms
+
+# 开发期打印完整 SQL 与结果
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    # 开发期打印 SQL 与参数
+    com.sakuya.notesatwill.mapper: DEBUG
+    # 打印 SQL 执行耗时与连接池状态
+    com.zaxxer.hikari: INFO

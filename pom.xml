@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.1</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+    <groupId>com.sakuya</groupId>
+    <artifactId>NotesAtWill</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>NotesAtWill</name>
+    <description>NotesAtWill</description>
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+    <developers>
+        <developer/>
+    </developers>
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
+    <properties>
+        <java.version>21</java.version>
+
+        <!--
+            MyBatis-Plus 版本：Spring Boot 的 BOM 【不管理】 MyBatis-Plus 版本，
+            所以必须在这里显式声明。starter 与 jsqlparser 两者版本必须完全一致。
+            3.5.15+ 才真正适配 Spring Boot 4，当前用 3.5.17。
+        -->
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+
+        <!--
+            JJWT 版本：Boot BOM 【不管理】 JJWT，必须自己声明。
+            0.13.0 是当前最新版（2025 年发布）。
+            ★ 三个坐标的版本必须完全一致，用这个属性统一管理。
+        -->
+        <jjwt.version>0.13.0</jjwt.version>
+    </properties>
+    <dependencies>
+
+        <!-- ==================== Web 层 ==================== -->
+
+        <!-- REST 接口、SSE 推送、以及调用 Python FastAPI 用的 RestClient -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+
+        <!-- 请求参数校验（@Valid / @NotBlank 等） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- ==================== 持久层 ==================== -->
+
+        <!--
+            ★ 必须是 spring-boot4-starter！
+              用 mybatis-plus-spring-boot3-starter 会导致 @Mapper 不被扫描，
+              启动时报 No qualifying bean of type 'XxxMapper' available。
+            该 starter 已传递引入 spring-boot-starter-jdbc，不用重复声明。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+
+        <!--
+            分页拦截器：自 MyBatis-Plus 3.5.9 起从主包拆出，【不引分页直接失效】。
+            版本必须与 starter 保持一致。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+
+        <!--
+            MySQL 驱动：版本由 Spring Boot BOM 管理（4.1.1 → 9.7.0），不要自己写版本号。
+            9.7.0 官方声明支持 MySQL Server 8.0 及以上，与项目的 MySQL 8.4 兼容。
+            scope=runtime：编译期不需要它，只有运行时才加载。
+        -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ==================== 缓存 ==================== -->
+
+        <!-- Redis：缓存、以及每日问候的幂等去重（底层 Lettuce） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- ==================== 安全认证 ==================== -->
+
+        <!-- Spring Security：JWT 认证链路、BCrypt 密码加密、接口权限拦截 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!--
+            ★ JJWT：必须引【三个】坐标，少一个运行时就会报错。
+              - jjwt-api    编译期接口（Jwts.builder() / Jwts.parser()），scope 默认 compile
+              - jjwt-impl   运行时实现，只在运行时需要 → runtime
+              - jjwt-jackson JSON 序列化 provider，通过 ServiceLoader 在运行时自动发现 → runtime
+            只引 api 会抛 "Unable to discover an implementation"；
+            不引 jackson（或 gson）provider 会抛找不到 Serializer 的异常。
+
+            ★ 关于 Jackson 版本冲突的说明（已实证，无需担心）：
+              jjwt-jackson 依赖的是 com.fasterxml.jackson.core:jackson-databind（Jackson 2），
+              而本项目接口层跑在 tools.jackson（Jackson 3）上。
+              两者【包名完全不同，是两套独立的类，classpath 共存互不干扰】。
+              且 Spring Boot 4.1.1 的 BOM 有意同时管理了两套：
+                jackson-2-bom.version = 2.21.5
+                jackson-bom.version   = 3.1.5
+              所以 jjwt-jackson 拿到的会是 BOM 管控的 2.21.5，版本受控。
+
+              唯一需要知道的差异：JJWT 内部用的是自己 new 的 Jackson 2 ObjectMapper，
+              【不会读取我们 JacksonConfig 里配的 Jackson 3 规则】。
+              这对 JWT 无影响——token 里只放 userId / username / 过期时间这类简单类型。
+        -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ==================== 开发减负 ==================== -->
+
+        <!--
+            AOP：日志切面、权限校验注解。
+            注意 Spring Boot 4 里已【没有 spring-boot-starter-aop】，改名为 aspectj。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
+        </dependency>
+
+        <!-- Actuator：/actuator/health 探活，调试与调用 Python 服务时很有用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--
+            Lombok：版本由 BOM 管理（1.18.46），无需手写版本。
+            optional=true + provided：只参与编译，不打进最终 jar；
+            spring-boot-maven-plugin 会自动把它排除掉，无需额外配置 excludes。
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ==================== 测试 ==================== -->
+        <!--
+            Spring Boot 4 起测试 starter 按技术拆分，
+            不再使用 spring-boot-starter-test，改为 <技术>-test。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                显式声明 Lombok 为注解处理器。
+                不写这段其实也能跑（Lombok 通过 classpath 被自动发现），
+                但 JDK 会持续打印「注释处理器未来版本可能不再自动发现」的警告，
+                而且 JDK 后续版本可能真的移除自动发现。
+                显式声明后告警消失，也不再依赖隐式行为。
+                版本用 ${lombok.version}，该属性由 Spring Boot 父 POM 提供（4.1.1 → 1.18.46）。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <!--
+                            Lombok 只在编译期起作用，不打进可执行 jar，
+                            否则打包后会带上一个无用的 lombok.jar。
+                            虽然 optional+provided 已能挡住大部分情况，
+                            这里显式排除，双保险。
+                        -->
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
