@@ -63,3 +63,5 @@ ai-service/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# 上述 AI 技能的安装锁文件（与 .agents/ 配套）
+skills-lock.json
